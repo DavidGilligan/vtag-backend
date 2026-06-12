@@ -1,0 +1,323 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  OWNER
+  BUYER
+  GARAGE
+  DEALER
+  INSURER
+  ADMIN
+}
+
+enum DocumentScope {
+  VEHICLE_HISTORY
+  USER_PRIVATE
+  SHARED_TEMPORARY
+  ADMIN_REVIEW
+}
+
+enum DocumentType {
+  MOT_CERTIFICATE
+  SERVICE_RECORD
+  MODIFICATION_RECORD
+  INSURANCE_DOCUMENT
+  TAX_DOCUMENT
+  WARRANTY_DOCUMENT
+  RECEIPT
+  PHOTO
+  OTHER
+}
+
+enum OcrProvider {
+  TESSERACT
+  TEXTRACT
+}
+
+enum OcrStatus {
+  PENDING
+  PROCESSING
+  COMPLETE
+  FAILED
+}
+
+enum TimelineEventType {
+  VEHICLE_CREATED
+  VTAG_ASSIGNED
+  OWNERSHIP_TRANSFER
+  DOCUMENT_UPLOADED
+  MOT_PASS
+  MOT_FAIL
+  SERVICE
+  MODIFICATION
+  MILEAGE_LOG
+  PHOTO_UPLOAD
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  firstName    String?
+  lastName     String?
+  role         UserRole @default(OWNER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  profile      UserProfile?
+  ownerships   VehicleOwnership[]
+  documents    Document[]
+  mileageLogs  MileageLog[]
+  galleryPosts GalleryPost[]
+  notifications Notification[]
+  marketplaceListings MarketplaceListing[]
+  auditLogs    AuditLog[]
+}
+
+model UserProfile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  username  String?
+  phone     String?
+  avatarUrl String?
+  preferences Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Vehicle {
+  id                 String   @id @default(uuid())
+  vin                String?  @unique
+  registration       String?
+  originalRegistration String?
+  make               String
+  model              String
+  year               Int?
+  colour             String?
+  verificationStatus String   @default("UNVERIFIED")
+  conditionScore     Float?
+  trustScore         Float?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  ownerships         VehicleOwnership[]
+  vtags              VTagReference[]
+  documents          Document[]
+  timelineEvents     TimelineEvent[]
+  mileageLogs        MileageLog[]
+  motRecords         MotRecord[]
+  serviceRecords     ServiceRecord[]
+  modificationRecords ModificationRecord[]
+  galleryPosts       GalleryPost[]
+  notifications      Notification[]
+  marketplaceListings MarketplaceListing[]
+  auditLogs          AuditLog[]
+}
+
+model VehicleOwnership {
+  id            String   @id @default(uuid())
+  vehicleId     String
+  userId        String
+  ownershipRole String   @default("OWNER")
+  verified      Boolean  @default(false)
+  startDate     DateTime @default(now())
+  endDate       DateTime?
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+}
+
+model VTagReference {
+  id            String   @id @default(uuid())
+  vehicleId     String
+  referenceCode String   @unique
+  status        String   @default("ACTIVE")
+  issuedAt      DateTime @default(now())
+  revokedAt     DateTime?
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+}
+
+model Document {
+  id              String        @id @default(uuid())
+  uploadedByUserId String
+  vehicleId       String?
+  documentScope   DocumentScope
+  documentType    DocumentType
+  originalFileUrl String
+  originalFileName String
+  mimeType        String
+  fileSize        Int
+  ocrProvider     OcrProvider?
+  ocrStatus       OcrStatus      @default(PENDING)
+  extractedText   String?
+  createdAt       DateTime       @default(now())
+
+  uploadedBy User     @relation(fields: [uploadedByUserId], references: [id])
+  vehicle    Vehicle? @relation(fields: [vehicleId], references: [id])
+
+  metadata   DocumentExtractedMetadata?
+  timelineEvents TimelineEvent[]
+  motRecords MotRecord[]
+  serviceRecords ServiceRecord[]
+  modificationRecords ModificationRecord[]
+}
+
+model DocumentExtractedMetadata {
+  id                   String   @id @default(uuid())
+  documentId            String   @unique
+  documentDate          DateTime?
+  mileage               Int?
+  garageName            String?
+  registrationDetected  String?
+  totalCost             Float?
+  extractedItems        Json?
+  confidenceScore       Float?
+
+  document Document @relation(fields: [documentId], references: [id])
+}
+
+model TimelineEvent {
+  id               String            @id @default(uuid())
+  vehicleId         String
+  sourceDocumentId  String?
+  eventType         TimelineEventType
+  title             String
+  description       String?
+  eventDate         DateTime?
+  visibility        String            @default("OWNER_ONLY")
+  createdAt         DateTime          @default(now())
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  sourceDocument Document? @relation(fields: [sourceDocumentId], references: [id])
+}
+
+model MileageLog {
+  id        String   @id @default(uuid())
+  vehicleId String
+  userId    String
+  mileage   Int
+  loggedAt  DateTime @default(now())
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+}
+
+model MotRecord {
+  id              String   @id @default(uuid())
+  vehicleId        String
+  sourceDocumentId String?
+  testDate         DateTime
+  status           String
+  mileage          Int?
+  testCentre       String?
+  advisories       Json?
+  defects          Json?
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  sourceDocument Document? @relation(fields: [sourceDocumentId], references: [id])
+}
+
+model ServiceRecord {
+  id              String   @id @default(uuid())
+  vehicleId        String
+  sourceDocumentId String?
+  serviceDate      DateTime?
+  mileage          Int?
+  garageName       String?
+  serviceItems     Json?
+  totalCost        Float?
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  sourceDocument Document? @relation(fields: [sourceDocumentId], references: [id])
+}
+
+model ModificationRecord {
+  id                 String   @id @default(uuid())
+  vehicleId           String
+  sourceDocumentId    String?
+  category            String
+  title               String
+  installer           String?
+  cost                Float?
+  installedAt         DateTime?
+  verificationStatus  String   @default("UNVERIFIED")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  sourceDocument Document? @relation(fields: [sourceDocumentId], references: [id])
+}
+
+model GalleryPost {
+  id        String   @id @default(uuid())
+  vehicleId String
+  userId    String
+  caption   String?
+  visibility String  @default("PUBLIC")
+  createdAt DateTime @default(now())
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+  media   GalleryMedia[]
+}
+
+model GalleryMedia {
+  id        String   @id @default(uuid())
+  postId    String
+  mediaUrl  String
+  mediaType String
+  createdAt DateTime @default(now())
+
+  post GalleryPost @relation(fields: [postId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  vehicleId String?
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id])
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
+}
+
+model MarketplaceListing {
+  id           String   @id @default(uuid())
+  vehicleId    String?
+  sellerUserId String
+  listingType  String
+  title        String
+  price        Float?
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
+  seller  User     @relation(fields: [sellerUserId], references: [id])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  vehicleId  String?
+  action     String
+  entityType String
+  entityId   String?
+  createdAt  DateTime @default(now())
+
+  user    User?    @relation(fields: [userId], references: [id])
+  vehicle Vehicle? @relation(fields: [vehicleId], references: [id])
+}
